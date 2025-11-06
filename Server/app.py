@@ -229,24 +229,17 @@ async def websocket_endpoint(websocket: WebSocket, doc_id: str):
             data = await websocket.receive_json()
             message_type = data.get("type")
 
-            # Live page updates
             if message_type == "content_update":
                 documents[doc_id]["pages"] = data["pages"]
                 documents[doc_id]["updated_at"] = datetime.now().isoformat()
-                save_db()  # ✅ persist
+                save_db()
+                await manager.broadcast(doc_id, {
+                    "type": "content_update",
+                    "pages": data["pages"],
+                    "user_id": user_id,
+                    "user_name": user_name
+                }, exclude=websocket)
 
-                await manager.broadcast(
-                    doc_id,
-                    {
-                        "type": "content_update",
-                        "pages": data["pages"],
-                        "user_id": user_id,
-                        "user_name": user_name
-                    },
-                    exclude=websocket
-                )
-
-            # Typing status (Viewing/Typing)
             elif message_type == "typing_status":
                 for conn in manager.active_connections.get(doc_id, []):
                     if conn["websocket"] == websocket:
@@ -254,12 +247,21 @@ async def websocket_endpoint(websocket: WebSocket, doc_id: str):
                         break
                 await manager.broadcast_user_list(doc_id)
 
-            # Presence / caret position
             elif message_type == "presence":
-                caret = data.get("caret")  # expected: {"pageIndex": int, "offset": int}
+                caret = data.get("caret")
                 await manager.update_presence(doc_id, websocket, caret)
 
-            # Version Save
+            # ✅ NEW: Handle Lock / Unlock
+            elif message_type == "toggle_lock":
+                locked = data.get("locked", False)
+                documents[doc_id]["is_locked"] = locked
+                save_db()
+
+                await manager.broadcast(doc_id, {
+                    "type": "lock_state",
+                    "locked": locked
+                })
+
             elif message_type == "save_version":
                 doc = documents[doc_id]
                 version = {
@@ -270,8 +272,7 @@ async def websocket_endpoint(websocket: WebSocket, doc_id: str):
                     "pages": doc["pages"].copy()
                 }
                 doc["versions"].append(version)
-                save_db()  # ✅ persist
-
+                save_db()
                 await manager.broadcast(doc_id, {
                     "type": "version_created",
                     "version": version
@@ -280,3 +281,6 @@ async def websocket_endpoint(websocket: WebSocket, doc_id: str):
     except WebSocketDisconnect:
         manager.disconnect(websocket, doc_id)
         await manager.broadcast_user_list(doc_id)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

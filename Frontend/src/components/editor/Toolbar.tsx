@@ -2,6 +2,8 @@ import { Bold, Italic, Underline, List, Plus, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import "./print.css";
+
 
 interface ToolbarProps {
   onAddPage: () => void;

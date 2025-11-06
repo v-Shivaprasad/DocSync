@@ -59,42 +59,5 @@
   }
 }
 
-@media print {
-  body {
-    background: white;
-    padding: 0;
-  }
-  
-  #toolbar {
-    display: none;
-  }
-  
-  #editor-container {
-    max-width: none;
-    margin: 0;
-    padding: 0;
-    background: white;
-  }
-  
-  .page {
-    margin: 0;
-    box-shadow: none;
-    page-break-after: always;
-    border: none;
-    width: 8.5in;
-    height: 11in;
-    padding: 1in;
-  }
-  
-  .page:not(:last-child)::after {
-    display: none;
-  }
-  
-  .page:not(:last-child) {
-    border-bottom: none;
-  }
-  
-  .page-content {
-    overflow: visible;
-  }
-}
+
+

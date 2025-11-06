@@ -1,0 +1,37 @@
+@media print {
+
+  /* Remove app background/padding wrappers */
+  body, html, #root, #editor-container {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Treat each .page as a printable sheet */
+  .page {
+    width: 210mm !important;      /* A4 width */
+    min-height: 297mm !important; /* A4 height */
+    padding: 20mm !important;
+    border: none !important;
+    box-shadow: none !important;
+    page-break-after: always;    /* ✅ The key */
+    page-break-inside: avoid;    /* ✅ prevent cutting in half */
+  }
+
+  /* ✅ Override only for printing */
+  .page-content {
+    height: auto !important;      
+    min-height: 260mm !important; 
+    overflow: visible !important; /* 🎯 ONLY in print mode */
+    white-space: pre-wrap;
+  }
+
+  /* Hide UI parts */
+  header,
+  .toolbar,
+  .version-sidebar,
+  .no-print {
+    display: none !important;
+  }
+}

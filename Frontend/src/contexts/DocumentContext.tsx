@@ -24,6 +24,7 @@ interface Document {
   created_at: string;
   updated_at: string;
   versions: Version[];
+  is_locked?: boolean;
 }
 
 interface DocumentContextType {
@@ -33,12 +34,14 @@ interface DocumentContextType {
   connectedUsers: ConnectedUser[];
   versions: Version[];
   isConnected: boolean;
+  isLocked: boolean;                   
   updatePages: (pages: string[]) => void;
   saveVersion: (summary: string) => void;
   updateTitle: (title: string) => void;
   setPages: React.Dispatch<React.SetStateAction<string[]>>;
   setCaret: (pageIndex: number, offset: number) => void;
-  restoreVersion: (version: Version) => void
+  restoreVersion: (version: Version) => void;
+  toggleLock: (locked: boolean) => void;
 }
 
 const DocumentContext = createContext<DocumentContextType | undefined>(undefined);
@@ -54,12 +57,12 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([]);
   const [versions, setVersions] = useState<Version[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [isLocked, setIsLocked] = useState(false); // ✅ NEW
 
   const wsRef = useRef<WebSocket | null>(null);
   const isSyncing = useRef(false);
   const firstLoad = useRef(true);
 
-  // Load document
   useEffect(() => {
     const init = async () => {
       const params = new URLSearchParams(window.location.search);
@@ -72,19 +75,20 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
         window.history.replaceState({}, '', `?doc=${id}`);
         setDocument(doc);
         setPages(doc.pages);
+        setIsLocked(doc.is_locked ?? false);
       } else {
         const res = await fetch(`${API_URL}/api/documents/${id}`);
         const doc = await res.json();
         setDocument(doc);
         setPages(doc.pages);
         setVersions(doc.versions);
+        setIsLocked(doc.is_locked ?? false);
       }
       setDocId(id!);
     };
     init();
   }, []);
 
-  // WebSocket sync
   useEffect(() => {
     if (!docId || !user) return;
 
@@ -92,7 +96,6 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
       `${WS_URL}/ws/${docId}?user_id=${user.id}&user_name=${encodeURIComponent(user.name)}&color=${encodeURIComponent(user.color)}`
     );
     wsRef.current = ws;
-
     ws.onopen = () => setIsConnected(true);
 
     ws.onmessage = (event) => {
@@ -106,6 +109,7 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
             firstLoad.current = false;
           }
           setVersions(data.document.versions);
+          setIsLocked(data.document.is_locked ?? false); // ✅
           break;
 
         case 'content_update':
@@ -117,49 +121,48 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
           break;
 
         case 'user_list':
-          setConnectedUsers(
-            data.users
-              .filter((u: any) => u.user_id !== user.id)
-              .map((u: any) => ({ ...u }))
-          );
+          setConnectedUsers(data.users.filter((u: any) => u.user_id !== user.id));
           break;
 
         case 'presence':
-          setConnectedUsers((prev) =>
-            prev.map((u) =>
-              u.user_id === data.user_id
-                ? { ...u, caret: data.caret }
-                : u
-            )
+          setConnectedUsers(prev =>
+            prev.map((u) => (u.user_id === data.user_id ? { ...u, caret: data.caret } : u))
           );
           break;
 
         case 'version_created':
-          setVersions((prev) => [data.version, ...prev]);
+          setVersions(prev => [data.version, ...prev]);
+          break;
+
+        case 'lock_state':              // ✅ NEW
+          setIsLocked(data.locked);
           break;
       }
     };
 
     ws.onclose = () => setIsConnected(false);
-
     return () => ws.close();
   }, [docId, user]);
 
   const updatePages = useCallback((newPages: string[]) => {
+    if (isLocked) return; // ✅ Prevent editing when locked
+
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN || isSyncing.current) return;
     setPages(newPages);
     ws.send(JSON.stringify({ type: 'content_update', pages: newPages }));
-  }, []);
+  }, [isLocked]);
 
   const setCaret = useCallback((pageIndex: number, offset: number) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'presence', caret: { pageIndex, offset } }));
+    wsRef.current?.send(JSON.stringify({ type: 'presence', caret: { pageIndex, offset } }));
   }, []);
 
   const saveVersion = useCallback((summary: string) => {
     wsRef.current?.send(JSON.stringify({ type: 'save_version', summary }));
+  }, []);
+
+  const toggleLock = useCallback((locked: boolean) => {
+    wsRef.current?.send(JSON.stringify({ type: 'toggle_lock', locked }));
   }, []);
 
   const updateTitle = useCallback(async (title: string) => {
@@ -171,11 +174,11 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
     });
     setDocument(await res.json());
   }, [docId, document]);
-  const restoreVersion = useCallback((version: Version) => {
-  setPages(version.pages);
-  setDocument(prev => prev ? { ...prev, pages: version.pages } : prev);
-}, []);
 
+  const restoreVersion = useCallback((version: Version) => {
+    setPages(version.pages);
+    setDocument(prev => prev ? { ...prev, pages: version.pages } : prev);
+  }, []);
 
   return (
     <DocumentContext.Provider
@@ -186,12 +189,14 @@ export function DocumentProvider({ children }: { children: React.ReactNode }) {
         connectedUsers,
         versions,
         isConnected,
+        isLocked,
         updatePages,
         saveVersion,
         updateTitle,
         setPages,
         setCaret,
         restoreVersion,
+        toggleLock,  
       }}
     >
       {children}
